@@ -773,7 +773,7 @@ castro$lng <- NA
 source("https://raw.githubusercontent.com/LucasPuente/geocoding/master/geocode_helpers.R")
 source("https://raw.githubusercontent.com/LucasPuente/geocoding/master/modified_geocode.R")
 geocode_apply<-function(x){
-  geocode(x, source = "google", output = "all", api_key="AIzaSyDgba3BMFysxhuE8Mi8EkAMoko_fIiJZPk")
+  geocode(x, source = "google", output = "all", api_key="")
 }
 
 
