@@ -1,0 +1,670 @@
+---
+title: "Timeline Search and Analysis"
+author: "Hongfeng Ai"
+date: "9 March 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+#### Useful Links:
+1. R documentation - get_timeline: https://www.rdocumentation.org/packages/rtweet/versions/0.6.8/topics/get_timeline
+2. Twitter Timeline Guide:
+https://developer.twitter.com/en/docs/tweets/timelines/guides/working-with-timelines
+
+
+### 1. Description:
+Timeline Searching based on each candidate is for studying the responses of the public on the tweets posted by candidates. We mainly search for 6 candidates according their user screen names (realDonalTrump, BernieSanders, JulianCastro, KamalaHarris, eWarren, AOC). The timeline data is stored as the type of .RData. Each candidate timeline is named as <candidatename>_timeline.RData such as Trump_timeline.RData. RData file can be imported into the Rstudio as a variable. We search the timeline which is since 1st, Jan. 2019 and also the timeline searching among candidates is operated at the same time so that the scraping data is more reasonable. The RData file per candidate are provided in Google Drive.
+
+Notice: The date of scraping the timelines: 06/03/2019  16:28
+```{r, include=FALSE}
+options(warn=-1)
+library(ROAuth)
+library(rtweet)
+library(dplyr) 
+library(ggplot2)
+library(forcats)
+library(twitteR)
+library(tm)
+library(wordcloud)
+library(plyr)
+library(stringr)
+library(scales)
+library(RColorBrewer)
+library(igraph)
+library(syuzhet)
+library(plotly)
+library(fmsb)
+```
+
+Authenticate and access Twitter API.
+```{r}
+# authenticate with Twitter
+consumerKey<-	"xVWGenVp05y3t2LImxikuo5iR"
+consumerSecret<-"jEMgvYZ794haK9vyfErnFZiswJWOXmrp4PnvOaNHVHwVsKgHlj"
+
+accessToken<-"928625302753775616-J0NQLxqHELe2zQAEv8Qv4kk7HSkzI7E"
+accessSecret<-"cq0A4M4YVAd03LpRLnrvRljWUBnxT3jk6c67b9ktUUlnN"
+
+setup_twitter_oauth (consumerKey, consumerSecret, accessToken, accessSecret)  # authenticate
+
+# insert the consumer key and consumer secret from twitter
+create_token(
+     consumer_key = "xVWGenVp05y3t2LImxikuo5iR",
+     consumer_secret = "jEMgvYZ794haK9vyfErnFZiswJWOXmrp4PnvOaNHVHwVsKgHlj"
+)
+```
+
+Scape the latest 700 timeline tweets and manually gain the timelines before 1st January, 2019. Then save them as .RData file.
+```{r, eval=FALSE}
+# replace with the target user screen name or ID
+Trump_timeline<-get_timeline("realDonaldTrump",n=700)
+Bernie_timeline<-get_timeline("BernieSanders",n=700)
+Julian_timeline<-get_timeline("JulianCastro",n=700)
+Kamala_timeline<-get_timeline("KamalaHarris",n=700)
+eWarren_timeline<-get_timeline("eWarren",n=700)
+AOC_timeline<-get_timeline("AOC",n=850)
+
+# only get the data before 1 Jan 2019
+Trump_timeline <- Trump_timeline[1:677,]
+Bernie_timeline <- Bernie_timeline[1:295,]
+Julian_timeline <- Julian_timeline[1:493,]
+Kamala_timeline <- Kamala_timeline[1:610,]
+eWarren_timeline <- eWarren_timeline[1:466,]
+AOC_timeline <- AOC_timeline[1:891,]
+
+# save to .RData file
+save(Trump_timeline, file = "Trump_timeline.RData")
+save(Bernie_timeline, file = "Bernie_timeline.RData")
+save(Julian_timeline, file = "Julian_timeline.RData")
+save(Kamala_timeline, file = "Kamala_timeline.RData")
+save(eWarren_timeline, file = "eWarren_timeline.RData")
+save(AOC_timeline, file = "AOC_timeline.RData")
+```
+
+Because we already had the timeline dataset, we don't need to scrape again. Instead, we just need to load the RData files.
+```{r}
+# Firstly, import the Timeline.RData dataset into RStudio
+load("Trump_timeline.RData" )
+load( "Kamala_timeline.RData" )
+load( "Julian_timeline.RData")
+load( "eWarren_timeline.RData")
+load( "Bernie_timeline.RData" )
+load( "AOC_timeline.RData")
+```
+
+There are three types of tweets.
+
+Conditional Filters:
+
+Original Post:             is_quote==FALSE & is_retweet==FALSE
+
+Retweet without comment:   is_quote==FALSE & is_retweet==TRUE
+
+Retweet with comment:      is_quote==TRUE & is_retweet==FALSE
+
+The below codes can calcuate the number of each type of tweet.(Here, we only show how to get the result of Trump. If you need others, please just change the corresponding candidate timeline variable).
+```{r, eval=FALSE}
+# the average number of favorites on the different types of tweets received
+print("the average number of favorites that Trump received:")
+print(paste("Original Post:",mean(subset(Trump_timeline, is_quote==FALSE & is_retweet==FALSE)$favorite_count)))
+print(paste("retweet without comment:",mean(subset(Trump_timeline, is_quote==FALSE & is_retweet==TRUE)$favorite_count)))
+print(paste("retweet with comment:",mean(subset(Trump_timeline, is_quote==TRUE & is_retweet==FALSE)$favorite_count)))
+print(paste("Total average:",mean(subset(Trump_timeline, is_retweet==FALSE)$favorite_count)))
+```
+
+
+Calculate the average number of favorites on the different types of tweets received.
+```{r, eval=FALSE}
+# the average number of favorites on the different types of tweets received
+print("the average number of favorites that Trump received:")
+print(paste("Original Post:",mean(subset(Trump_timeline, is_quote==FALSE & is_retweet==FALSE)$favorite_count)))
+print(paste("retweet without comment:",mean(subset(Trump_timeline, is_quote==FALSE & is_retweet==TRUE)$favorite_count)))
+print(paste("retweet with comment:",mean(subset(Trump_timeline, is_quote==TRUE & is_retweet==FALSE)$favorite_count)))
+print(paste("Total average:",mean(subset(Trump_timeline, is_retweet==FALSE)$favorite_count)))
+
+```
+
+calculate the average number of retweets on the different types of tweets received.
+```{r,eval=FALSE}
+# the average number of retweets on the different types of tweets received
+print("the average number of retweets that Trump received:")
+print(paste("Original Post:",mean(subset(Trump_timeline, is_quote==FALSE & is_retweet==FALSE)$retweet_count)))
+print(paste("retweet without comment:",mean(subset(Trump_timeline, is_quote==FALSE & is_retweet==TRUE)$retweet_count)))
+print(paste("retweet with comment:",mean(subset(Trump_timeline, is_quote==TRUE & is_retweet==FALSE)$retweet_count)))
+print(paste("Total average:",mean(subset(Trump_timeline, is_retweet==FALSE)$retweet_count)))
+```
+
+
+### 2. Plot the timeline overview
+After having the below results, the overview of the different types of tweets can be ploted out.
+
+The following code will be used on plotting a graph to see how many proportions of different types of tweets they have.
+```{r}
+# store result into a dataframe
+timeline_overview = matrix(data=c(504,149,24,211,73,11,228,215,50,523,19,68,390,37,39,285,303,303),nrow=3,ncol=6)
+colnames(timeline_overview)=c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez")
+rownames(timeline_overview)=c("Orginal Post","Retweet without comment","Retweet with comment")
+
+#create color palette:
+coul = brewer.pal(3, "Pastel2") 
+
+#Transform this data in %
+data_percentage=apply(timeline_overview, 2, function(x){x*100/sum(x,na.rm=T)})
+
+# Make a stacked barplot--> it will be in %!
+barplot(data_percentage, col=coul , border="white", xlab="Candidates",legend=rownames(timeline_overview))
+```
+
+Plot the order bar over the total number of tweets.
+```{r}
+# store result into a dataframe
+num_tweet_data <- data.frame(
+     name = c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez"),
+     val = c(677, 295, 493, 610, 466, 891)
+)
+
+# plot the order bar over the number of tweets
+num_tweet_data %>%
+     mutate(name = fct_reorder(name, val)) %>%
+     ggplot( aes(x=name, y=val)) + 
+     geom_bar(stat="identity") +
+     coord_flip()+
+     xlab("Candidates") +
+     ylab("The total number of tweets")
+```
+
+
+### 3. The respones in term of favorites:
+The below codes will help to shows the average number of favorites per candidates received and the how the different types of tweets compose their own tweets.
+```{r}
+# store the result into a daraframe
+favorites_data <- data.frame(
+     name = c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez"),
+     val = c(118274, 13292, 801, 15659, 5124, 46962)
+)
+
+# plot the order bar over average favorites
+favorites_data %>%
+     mutate(name = fct_reorder(name, val)) %>%
+     ggplot( aes(x=name, y=val)) + 
+     geom_bar(stat="identity") +
+     coord_flip()+
+     xlab("Candidates") +
+     ylab("The average number of favorites")
+
+# store the result into a daraframe
+favorites_overview = matrix(data=c(119481, 92921, 13146, 16084, 788, 856, 16390, 10039, 5003, 6332),nrow=2,ncol=6)
+colnames(favorites_overview)=c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez")
+rownames(favorites_overview)=c("Orginal Post","Retweet with comment")
+
+#create color palette:
+library(RColorBrewer)
+coul = brewer.pal(3, "Pastel2") 
+
+#Transform this data in %
+data_percentage=apply(favorites_overview, 2, function(x){x*100/sum(x,na.rm=T)})
+
+# Make a stacked barplot--> it will be in %!
+barplot(data_percentage, col=coul , border="white", xlab="Candidates",legend=rownames(favorites_overview))
+```
+
+
+### 4. The respones in term of retweets:
+The below codes will help to shows the average number of retweets per candidates received and the how the different types of tweets compose their own tweets.
+```{r}
+# store the result into a daraframe
+retweets_data <- data.frame(
+     name = c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez"),
+     val = c(26736, 2987, 189, 3461, 1060, 8001)
+)
+
+# plot the order bar over average retweet 
+retweets_data %>%
+     mutate(name = fct_reorder(name, val)) %>%
+     ggplot( aes(x=name, y=val)) + 
+     geom_bar(stat="identity") +
+     coord_flip()+
+     xlab("Candidates") +
+     ylab("The average number of retweets")
+
+# store the result into a daraframe
+retweets_overview = matrix(data=c(26895, 18104, 23384, 26736, 2948, 1139, 3741, 186, 184, 201, 3558, 6148, 2719, 1019, 2323, 1462, 1060, 5128, 6521, 10704),nrow=3,ncol=6)
+colnames(retweets_overview)=c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez")
+rownames(retweets_overview)=c("Orginal Post","Retweet without comment", "Retweet with comment")
+
+#create color palette:
+library(RColorBrewer)
+coul = brewer.pal(3, "Pastel2") 
+
+#Transform this data in %
+data_percentage=apply(retweets_overview, 2, function(x){x*100/sum(x,na.rm=T)})
+
+# Make a stacked barplot--> it will be in %!
+barplot(data_percentage, col=coul , border="white", xlab="Candidates",legend=rownames(retweets_overview))
+```
+
+
+### 5.The retweet network and the original author of retweets:
+In this part, we consider that the 'retweet without comment' and 'retweet with comment' are both belong to the category of 'retweet'. Here, We just compare the Trump retweet network with Alexandria retweet network. More network graphs, please visit the output folder.
+```{r}
+# The function is to plot the retweet network according the given timeline dataset
+plot_network_func <- function(TIMELINE, NAME){
+
+     # record the screen name of retweet without comment
+     rsn = TIMELINE$retweet_screen_name
+     # record the screen name of retweet with comment
+     qsn = TIMELINE$quoted_screen_name
+     # get the index of nan value
+     rsn_na_ind <- which(is.na(rsn))
+     # get the index of non-nan value
+     qsn_nna_ind <- which(!is.na(qsn))
+     # use non-nan value in qsn to fill the nan value in rsn
+     for (i in rsn_na_ind){
+          if (i %in% qsn_nna_ind){
+               rsn[i] = qsn[i]
+          }
+     }
+     
+     # create graph from an edge list
+     # results in two column matrix of edges
+     retweeter_poster = cbind(TIMELINE$screen_name, rsn)
+     retweeter_poster <- retweeter_poster[!(is.na(retweeter_poster[,2])),]
+     
+     # generate the graph
+     rt_graph = graph.edgelist(retweeter_poster)
+     
+     # get vertex names
+     ver_labs = get.vertex.attribute(rt_graph, "name", index=V(rt_graph))
+     
+     # choose a layout
+     glay = layout.fruchterman.reingold(rt_graph)
+     
+     # plot
+     par(bg="gray1", mar=c(1,1,1,1))
+     result <- plot(rt_graph, layout=glay,
+                    vertex.color="gray25",
+                    vertex.size=10,
+                    vertex.label=ver_labs,
+                    vertex.label.family="sans",
+                    vertex.shape="none",
+                    vertex.label.color=hsv(h=0, s=0, v=.95, alpha=0.5),
+                    vertex.label.cex=0.85,
+                    edge.arrow.size=0.8,
+                    edge.arrow.width=0.5,
+                    edge.width=3,
+                    edge.color=hsv(h=.95, s=1, v=.7, alpha=0.5))
+     
+     # add title
+     title_name = paste("Interacting accounts with", NAME, "twitter account: Retweets")
+     title(title_name, cex.main=1, col.main="gray95")
+}
+
+plot_network_func(Trump_timeline, "Donald Trump")
+# plot_network_func(Bernie_timeline, "Bernie Sanders")
+# plot_network_func(Julian_timeline, "Julian Castro")
+# plot_network_func(Kamala_timeline, "Kamala Harris")
+# plot_network_func(eWarren_timeline, "Elizabeth Warren")
+plot_network_func(AOC_timeline, "Alexandria Ocasio-Cortez")
+```
+
+Through the above figures, we can find that Alexandria Ocasio-Cortez's retweets come from the content posted by a large amount of accounts while Trump prefer to interact with a limited number of organizations or people more oftenly  such as Donald Trump Jr. who is the executive in the Trump Organization. Besides, we also plot order bar to see which accounts are retweeted frequently by per candidate.
+
+Let see the accounts was frequently retweeted by Trump and AOC.
+```{r}
+# plot the retweet original author by order bar
+plot_retweet_author <- function(TIMELINE, NAME){
+     
+     # record the screen name of retweet without comment
+     rsn = TIMELINE$retweet_screen_name
+     # record the screen name of retweet with comment
+     qsn = TIMELINE$quoted_screen_name
+     # get the index of nan value
+     rsn_na_ind <- which(is.na(rsn))
+     # get the index of non-nan value
+     qsn_nna_ind <- which(!is.na(qsn))
+     # use non-nan value in qsn to fill the nan value in rsn
+     for (i in rsn_na_ind){
+          if (i %in% qsn_nna_ind){
+               rsn[i] = qsn[i]
+          }
+     }
+     rsn <- rsn[!(is.na(rsn))] # obtain the retweet author name
+     retweet_author_df <- data.frame(rsn) # convert to data.frame type
+     # filter out the authors who are retweeted more than 2 times
+     p1 <- retweet_author_df %>% filter(rsn != "") %>% group_by(rsn) %>% count() %>% filter(freq>2) %>% arrange(desc(freq)) %>% ungroup()
+
+     # plot the order bar
+     ggplot(p1, aes(x=reorder(rsn, freq), y=freq)) +
+          geom_bar(stat="identity", fill="blue") + coord_flip() +
+          labs(x="The retweet orignal author", y=paste("The number of tweets retweeted by ", NAME)) +
+          theme(legend.position = "none")
+     
+}
+
+plot_retweet_author(Trump_timeline, "Donald Trump")
+# plot_retweet_author(Bernie_timeline, "Bernie Sanders")
+# plot_retweet_author(Julian_timeline, "Julian Castro")
+# plot_retweet_author(Kamala_timeline, "Kamala Harris")
+# plot_retweet_author(eWarren_timeline, "Elizabeth Warren")
+plot_retweet_author(AOC_timeline, "Alexandria Ocasio-Cortez")
+```
+
+
+### 6. The top-20 of most frequent used terms per candidates:
+This part, we can plot out the top-20 of most frequent used terms per candidates. The frequent-term searching is based on the cleaned tweets that is cleaned by deleting all the English stopwords, punctuations and  numbers.
+```{r}
+# clean the text data in the given dataset
+clean_text <- function(textdata){
+     names(textdata)[names(textdata) == 'Text'] <- 'text'#incase you data has the column name #Text, change it to "text" as the next line will only accept the column name "text"
+     # take the text column and convert to a corpus
+     textdata$doc_id<-textdata$doc_id <- seq_len(nrow(textdata))  # include the doc_id
+     # text<as.character(textdata$text)
+     corpus <- Corpus(DataframeSource(textdata))
+     corpus <- tm_map(corpus, content_transformer(tolower))
+     corpus <- tm_map(corpus, removeWords, stopwords("en"))
+     corpus <- tm_map(corpus, removePunctuation, preserve_intra_word_dashes = TRUE)
+     corpus <- tm_map(corpus, removeNumbers)
+     corpus <- tm_map(corpus, stripWhitespace)
+     return(corpus)
+}
+
+# form a document term matrix
+CreateTermsMatrix <- function(x){
+     x <- TermDocumentMatrix(x)
+     x <- as.matrix(x)
+     y <- rowSums(x)
+     y <- sort(y, decreasing = TRUE)
+     return(y)
+}
+
+# plot the top 20 of most frequent used terms
+plot_top_usedterms <- function(timeline_data, NAME){
+     textdata <- timeline_data
+     # clean the text
+     corpus = clean_text(textdata)
+     # get term matrix
+     corpus <- CreateTermsMatrix(corpus)
+     term_freq_df <- data.frame(word=names(corpus), count=corpus)
+     # only consider the top 20 of most frequent used terms
+     term_freq_df[1:20,] %>%
+          ggplot(aes(x=(reorder(word, count)), y=count)) +
+          geom_bar(stat="identity", fill="darkgreen") + coord_flip() + theme(legend.position = "none") +
+          labs(x=paste("The top 20 of most frequent terms used by ",NAME))
+}
+
+plot_top_usedterms(Trump_timeline, "Donald Trump")
+# plot_top_usedterms(Bernie_timeline, "Bernie Sanders")
+# plot_top_usedterms(Julian_timeline, "Julian Castro")
+# plot_top_usedterms(Kamala_timeline, "Kamala Harris")
+# plot_top_usedterms(eWarren_timeline, "Elizabeth Warren")
+plot_top_usedterms(AOC_timeline, "Alexandria Ocasio-Cortez")
+```
+
+
+### 7. The top-1000 most frequent-used word cloud
+This part, we can plot out the top-1000 most frequent-used word cloud per candidate. Also, Word cloud ploting is based on the cleaned tweets that is cleaned by deleting all the English stopwords, punctuations and  numbers.
+```{r}
+# show the top100 of most frequent used term by wordcloud2
+plot_wordcloud <- function(timeline_data){
+     textdata <- timeline_data
+     # clean the text
+     corpus = clean_text(textdata)
+     # get term matrix
+     corpus <- CreateTermsMatrix(corpus)
+     term_freq_df <- data.frame(word=names(corpus), count=corpus)
+     wordcloud(term_freq_df$word, term_freq_df$count, max.words = 100, scale=c(2.5,.5), random.color = TRUE, colors=brewer.pal(9,"Set1"))
+}
+
+plot_wordcloud(Trump_timeline)
+# plot_wordcloud(Bernie_timeline)
+# plot_wordcloud(Julian_timeline)
+# plot_wordcloud(Kamala_timeline)
+# plot_wordcloud(eWarren_timeline)
+plot_wordcloud(AOC_timeline)
+```
+
+
+### 8. Sentiment detection
+It classifies the sentiment of a piece of text as either positive, negative or neutral using the positive and negative sentiment lexicons.
+```{r}
+plot_sentiment_func <- function(timeline_dataset){
+     #read in the file
+     file<-timeline_dataset
+     tweets.df<-file$text
+     tweets.df<-tolower(tweets.df)
+
+
+     tweets.df <- sapply(tweets.df,function(row) iconv(row, "latin1", "ASCII", sub=""))
+
+     #cleaning the tweets
+     tweets.df = gsub("&amp", "", tweets.df) # remove &amp
+     tweets.df= gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", tweets.df) # remove retweet entities
+     tweets.df = gsub("@\\w+", "", tweets.df) # remove at people
+     weets.df= gsub("[[:punct:]]", "", tweets.df) # remove punctuation
+     tweets.df = gsub("[[:digit:]]", "", tweets.df) # remove numbers
+     tweets.df = gsub("http\\w+", "", tweets.df) # remove html links
+     # remove unnecessary spaces
+     tweets.df = gsub("[ \t]{2,}", "", tweets.df)
+     tweets.df= gsub("^\\s+|\\s+$", "", tweets.df)
+
+
+     #get rid of unnecessary spaces
+     tweets.df <- str_replace_all(tweets.df," "," ")
+     # Get rid of URLs
+     #tweets.df <- str_replace_all(tweets.df, "http://t.co/[a-z,A-Z,0-9]*{8}","")
+     # Take out retweet header, there is only one
+     tweets.df <- str_replace(tweets.df,"RT @[a-z,A-Z]*: ","")
+     # Get rid of hashtags
+     tweets.df <- str_replace_all(tweets.df,"#[a-z,A-Z]*","")
+     # Get rid of references to other screennames
+     tweets.df <- str_replace_all(tweets.df,"@[a-z,A-Z]*","")  
+
+     #view cleaned tweets
+     #View(tweets.df)
+
+     #Reading the Lexicon positive and negative words
+     pos <- readLines("E:/MSc Data Science/Text Mining/SMALR/Code/positive_words.txt")
+     neg <- readLines("E:/MSc Data Science/Text Mining/SMALR/Code/negative_words.txt")
+
+     #function to calculate sentiment score
+     score.sentiment <- function(sentences, pos.words, neg.words, .progress='none')
+     {
+          # Parameters
+          # sentences: vector of text to score
+          # pos.words: vector of words of postive sentiment
+          # neg.words: vector of words of negative sentiment
+          # .progress: passed to laply() to control of progress bar
+  
+          # create simple array of scores with laply
+          scores <- laply(sentences,
+                  function(sentence, pos.words, neg.words)
+                  {
+                    # remove punctuation
+                    sentence <- gsub("[[:punct:]]", "", sentence)
+                    # remove control characters
+                    sentence <- gsub("[[:cntrl:]]", "", sentence)
+                    # remove digits
+                    sentence <- gsub('\\d+', '', sentence)
+                    
+                    #convert to lower
+                    sentence <- tolower(sentence)
+                    
+                    
+                    # split sentence into words with str_split (stringr package)
+                    word.list <- str_split(sentence, "\\s+")
+                    words <- unlist(word.list)
+                    
+                    # compare words to the dictionaries of positive & negative terms
+                    pos.matches <- match(words, pos)
+                    neg.matches <- match(words, neg)
+                    
+                    # get the position of the matched term or NA
+                    # we just want a TRUE/FALSE
+                    pos.matches <- !is.na(pos.matches)
+                    neg.matches <- !is.na(neg.matches)
+                    
+                    # final score
+                    score <- sum(pos.matches) - sum(neg.matches)
+                    return(score)
+                  }, pos.words, neg.words, .progress=.progress )
+          # data frame with scores for each sentence
+          scores.df <- data.frame(text=sentences, score=scores)
+          return(scores.df)
+}
+
+     #sentiment score
+     scores_twitter <- score.sentiment(tweets.df, pos.txt, neg.txt, .progress='text')
+
+     #View(scores_twitter)
+
+     #Summary of the sentiment scores
+     summary(scores_twitter)
+
+     scores_twitter$score_chr <- ifelse(scores_twitter$score < 0,'Negtive', ifelse(scores_twitter$score > 0, 'Positive', 'Neutral'))
+
+     #View(scores_twitter)
+
+     #Convert score_chr to factor for visualizations
+     scores_twitter$score_chr <- as.factor(scores_twitter$score_chr)
+     names(scores_twitter)[3]<-paste("Sentiment")  
+
+     #plot to show number of negative, positive and neutral comments
+     ggplot(scores_twitter, aes(x=Sentiment, fill=Sentiment))+ geom_bar(aes(y = (..count..)/sum(..count..))) + 
+     scale_y_continuous(labels = percent)+labs(y="Score")+
+     theme(text =element_text(size=15))+theme(axis.text = element_text(size=15))+ theme(legend.position="none")+ coord_cartesian(ylim=c(0,0.6)) + scale_fill_manual(values=c("firebrick1", "grey50", "limeGREEN"))
+
+}
+plot_sentiment_func(Trump_timeline)
+# plot_sentiment_func(Bernie_timeline)
+# plot_sentiment_func(Julian_timeline)
+# plot_sentiment_func(Kamala_timeline)
+# plot_sentiment_func(eWarren_timeline)
+plot_sentiment_func(AOC_timeline)
+```
+
+
+### 9. Emotion radar chart
+I use the NRC emotion lexicon to detect emotions in a text. the negative and positive (sentiment polarity) detection are removed in here and only show eight emotions (trust, anticipation, sadness, joy, anger, fear, surprise and disgust). We calculate the percentage of each emotions per candidate on their own tweets. We can see that Trump and Alexandria share the similar emotion distribution.
+```{r}
+# clean the text
+clean_tweets_func <- function(DATASET){
+     clean_tweets = DATASET$text
+     # remove retweet entities
+     clean_tweets = gsub('(RT|via)((?:\\b\\W*@\\w+)+)', '', clean_tweets)
+     # remove at people
+     clean_tweets = gsub('@\\w+', '', clean_tweets)
+     # remove punctuation
+     clean_tweets = gsub('[[:punct:]]', '', clean_tweets)
+     # remove numbers
+     clean_tweets = gsub('[[:digit:]]', '', clean_tweets)
+     # remove html links
+     clean_tweets = gsub('http\\w+', '', clean_tweets)
+     # remove unnecessary spaces
+     clean_tweets = gsub('[ \t]{2,}', '', clean_tweets)
+     clean_tweets = gsub('^\\s+|\\s+$', '', clean_tweets)
+     # remove emojis or special characters
+     clean_tweets = gsub('<.*>', '', enc2native(clean_tweets))
+     # lowercase
+     clean_tweets = tolower(clean_tweets)
+     return(clean_tweets)
+}
+
+
+# Count emtion
+emotion_pert_func <- function(timeline_data, NAME){
+     # clean the tweets
+     clean_tweets = clean_tweets_func(timeline_data)
+     # calculate emotion terms
+     emotions<- get_nrc_sentiment(clean_tweets)
+     # sum the values of emotions 
+     emo_bar = colSums(emotions)
+     # transfer it into dataframe
+     emo_sum = data.frame(count=emo_bar, emotion=names(emo_bar))
+     # fractor the 'emotion'
+     emo_sum$emotion = factor(emo_sum$emotion, levels=emo_sum$emotion[order(emo_sum$count, decreasing = TRUE)])
+     emo_sum <- emo_sum[1:8,]
+     # calcuate the percentage of emotions
+     emo_sum$percent<-(emo_sum$count/sum(emo_sum$count))*100
+     emo_pert = t(emo_sum$percent)
+     row.names(emo_pert) <- NAME
+     colnames(emo_pert) <-emo_sum$emotion
+     return (emo_pert)
+}
+
+# cacluate the percentage of different emotions per candidates
+Trump_emo_pert = emotion_pert_func(Trump_timeline, "Donald Trump")
+Bernie_emo_pert= emotion_pert_func(Bernie_timeline, "Bernie Sanders")
+Julian_emo_pert = emotion_pert_func(Julian_timeline, "Julian Castro")
+Kamala_emo_pert = emotion_pert_func(Kamala_timeline, "Kamala Harris")
+Elizabeth_emo_pert = emotion_pert_func(eWarren_timeline, "Elizabeth Warren")
+AOC_emo_pert = emotion_pert_func(AOC_timeline, "Alexandria Ocasio-Cortez")
+
+
+# if we plot all six candidates togethere, then the graph will looks messy, so we separe them into two graph and each graph only compares with 3 candidates in here 
+comp_emo_df1 <- rbind(Trump_emo_pert, Kamala_emo_pert, AOC_emo_pert)
+comp_emo_df2 <- rbind(Bernie_emo_pert, Julian_emo_pert, Elizabeth_emo_pert)
+
+# convert to data.frame type
+comp_emo_df1 <- as.data.frame(comp_emo_df1)
+comp_emo_df2 <- as.data.frame(comp_emo_df2)
+
+# To use the fmsb package, I have to add 2 lines to the dataframe: the max and min of each topic to show on the plot!
+comp_emo_df1 = rbind(rep(30,5) , rep(0,5) , comp_emo_df1)
+comp_emo_df2 = rbind(rep(30,5) , rep(0,5) , comp_emo_df2)
+
+# radarchart with custom features
+colors_border=c( rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.9) , rgb(0.2,0.2,0.5,0.9) )
+colors_in=c( rgb(0.2,0.5,0.5,0.4), rgb(0.8,0.2,0.5,0.4) , rgb(0.2,0.2,0.5,0.4) )
+radarchart( comp_emo_df1  , axistype=1 , 
+            #custom polygon
+            pcol=colors_border , pfcol=colors_in , plwd=1 , plty=1,
+            #custom the grid
+            cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0,20,5), cglwd=0.8,
+            #custom labels
+            vlcex=0.8 
+)
+legend(x=0.7, y=1, legend = rownames(comp_emo_df1[-c(1,2),]), bty = "n", pch=20 , col=colors_in , text.col = "grey", cex=1.2, pt.cex=3)
+
+radarchart( comp_emo_df2  , axistype=1 , 
+            #custom polygon
+            pcol=colors_border , pfcol=colors_in , plwd=1 , plty=1,
+            #custom the grid
+            cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0,20,5), cglwd=0.8,
+            #custom labels
+            vlcex=0.8 
+)
+
+legend(x=0.7, y=1, legend = rownames(comp_emo_df2[-c(1,2),]), bty = "n", pch=20 , col=colors_in , text.col = "grey", cex=1.2, pt.cex=3)
+
+```
+
+
+### 10. Tweet Length
+Here, we calculate the average length of tweets excluding the retweets without comment.
+```{r}
+# focus on their original post and retweet with comment
+cal_mean_textlength <- function(timeline_dataset){
+     mean_length <- mean(subset(timeline_dataset, is_retweet==FALSE)$display_text_width)
+     return(mean_length)
+}
+
+# cacluate the average text length for each candidate
+Trump_ml = cal_mean_textlength(Trump_timeline)
+Bernie_ml = cal_mean_textlength(Bernie_timeline)
+Julian_ml = cal_mean_textlength(Julian_timeline)
+Kamala_ml = cal_mean_textlength(Kamala_timeline)
+Elizabeth_ml = cal_mean_textlength(eWarren_timeline)
+AOC_ml = cal_mean_textlength(AOC_timeline)
+
+# store the result into dataframe
+mean_text_length <- c(Trump_ml, Bernie_ml, Julian_ml, Kamala_ml, Elizabeth_ml, AOC_ml)
+name <- c("Donald Trump", "Bernie Sanders", "Julian Castro", "Kamala Harris", "Elizabeth Warren", "Alexandria Ocasio-Cortez")
+mtl_df <- data.frame(mean_text_length, name)
+
+# plot the order bar
+ggplot(mtl_df, aes(x=reorder(name, mean_text_length), y=mean_text_length)) + 
+          geom_bar(stat="identity", fill="pink") + coord_flip() +
+          labs(x="Candidates", y=paste("The average length of tweets")) +
+          theme(legend.position = "none")
+```
